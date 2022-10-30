@@ -2,7 +2,6 @@ package models
 
 import akka.actor.ActorSystem
 import akka.stream.scaladsl.{Sink, Source}
-import akka.util.Timeout
 import play.api
 import play.api.{Logger}
 
@@ -45,13 +44,10 @@ class ClubRepo @Inject()()(protected val dbConfigProvider: DatabaseConfigProvide
 
   private[models] val Clubs = TableQuery[ClubsTable]
   private[models] val Users = TableQuery[UsersTable]
-  implicit val timeout = Timeout(5 seconds)
-
-  def _findClubByName(name: String) = Clubs.filter(_.name === name).to[List]
 
   def findClubByName(name: String): Future[List[Club]] = {
-    val query = db.stream(_findClubByName(name).result)
-    val source = Source.fromPublisher(query)
+    val query = Clubs.filter(_.name === name).to[List].result
+    val source = Source.fromPublisher(db.stream(query))
     val result: Future[List[Club]] = source.runWith(Sink.collection)
     result
   }
