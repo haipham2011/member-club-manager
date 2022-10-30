@@ -96,44 +96,44 @@ class ClubRepo @Inject()()(protected val dbConfigProvider: DatabaseConfigProvide
   def createClub(requestBody: AnyContent) = {
     requestBody.asJson.map {
       json => {
-        val clubName = (json \ "name").as[String]
+        val clubName = (json \ "name").as[String].trim
         val members = (json \ "members").as[List[String]]
 
         if (clubName.isEmpty || clubName == null || members.size == 0 || members == null) {
           BadRequest(createResponse(403, "Club name is empty or there is no member in the club"))
-        }
-
-        val findClubFuture = (for {
-          clubs <- findClubByName(clubName)
-        } yield {
-          if (clubs.size == 1) {
-            BadRequest(createResponse(403, "Club name has already created"))
-          } else {
-            val words = clubName.split("\\s+")
-            val shortcut = words.map(word => {
-              val end = words.size match {
-                case 1 => 3
-                case 2 => 2
-                case _ => 1
+        } else {
+          val findClubFuture = (for {
+            clubs <- findClubByName(clubName)
+          } yield {
+            if (clubs.size == 1) {
+              BadRequest(createResponse(403, "Club name has already created"))
+            } else {
+              val words = clubName.split("\\s+")
+              val shortcut = words.map(word => {
+                val end = words.size match {
+                  case 1 => 3
+                  case 2 => 2
+                  case _ => 1
+                }
+                word.toUpperCase.substring(0, end)
               }
-              word.toUpperCase.substring(0, end)
+              ).reduce((a, b) => a + b)
+
+              val newClub = Club(0, clubName, shortcut)
+
+              val action: DBIO[(Long, List[Long])] = (for {
+                i <- Clubs returning Clubs.map(_.id) += newClub
+                j <- DBIO.sequence(members.map(mem => Users returning Users.map(_.id) += User(0, mem, i)))
+              } yield (i, j)).transactionally
+
+              db.run(action)
+              Ok(createResponse(200, "Save club successfully"))
             }
-            ).reduce((a, b) => a + b)
+          })
 
-            val newClub = Club(0, clubName, shortcut)
-
-            val action: DBIO[(Long, List[Long])] = (for {
-              i <- Clubs returning Clubs.map(_.id) += newClub
-              j <- DBIO.sequence(members.map(mem => Users returning Users.map(_.id) += User(0, mem, i)))
-            } yield (i, j)).transactionally
-
-            db.run(action)
-            Ok(createResponse(200, "Save club successfully"))
-          }
-        })
-
-        // Set max timeout time for finding Club with name
-        Await.result(findClubFuture, 1 minutes)
+          // Set max timeout time for finding Club with name
+          Await.result(findClubFuture, 1 minutes)
+        }
       }
     } getOrElse {
       BadRequest(createResponse(500, "Bad request"))
